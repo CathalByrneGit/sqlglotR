@@ -1,0 +1,173 @@
+---
+title: "Getting started with sqlglotR"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started with sqlglotR}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>"
+)
+```
+
+## Overview
+
+`sqlglotR` wraps the Python [SQLGlot](https://github.com/tobymao/sqlglot) library
+via **reticulate** to give R packages first-class SQL parsing capabilities:
+
+| Function                 | What it does                                        |
+|--------------------------|-----------------------------------------------------|
+| `sg_parse_columns()`     | Column-level lineage extraction                     |
+| `sg_decompose_boolean()` | Boolean AST decomposition                           |
+| `sg_translate()`         | SQL dialect translation                             |
+| `sg_extract_ddl_schema()`| DDL → table/column/PK/FK schema                    |
+
+## Installation
+
+Install the R package in the usual way, then install the Python dependency:
+
+```{r install, eval = FALSE}
+# Install from source / CRAN
+# install.packages("sqlglotR")
+
+# Install the Python dependency once
+sqlglotR::sqlglot_install()
+```
+
+Check availability:
+
+```{r check, eval = FALSE}
+sqlglotR::sqlglot_available()
+#> [1] TRUE
+```
+
+## Column-level lineage: `sg_parse_columns()`
+
+`sg_parse_columns()` traces each SELECT output back to its source table and column.
+
+```{r parse-columns, eval = FALSE}
+library(sqlglotR)
+
+sql <- "
+  SELECT a.name, b.age, a.age + b.los AS risk
+  FROM patients AS a
+  JOIN encounters AS b ON a.id = b.patient_id
+"
+
+df <- sg_parse_columns(sql, dialect = "duckdb")
+df
+#>   output_column source_table source_column                expression is_computed
+#> 1          name            a          name                    a.name       FALSE
+#> 2           age            b           age                     b.age       FALSE
+#> 3          risk            a           age  a.age + b.los AS risk        TRUE
+#> 4          risk            b           los  a.age + b.los AS risk        TRUE
+```
+
+CTEs are resolved automatically:
+
+```{r cte, eval = FALSE}
+cte_sql <- "
+  WITH base AS (SELECT id, score FROM raw_scores)
+  SELECT base.score FROM base
+"
+sg_parse_columns(cte_sql)
+```
+
+## Boolean decomposition: `sg_decompose_boolean()`
+
+`sg_decompose_boolean()` splits a WHERE-clause body into its atomic predicates,
+preserving the `AND` / `OR` / `NOT` structure as a tree.
+
+```{r bool, eval = FALSE}
+tree <- sg_decompose_boolean("(a > 3 OR b < 2) AND NOT c IS NULL")
+print(tree)
+#> [AND]
+#>   [OR]
+#>     [LEAF] a > 3  (cols: a)
+#>     [LEAF] b < 2  (cols: b)
+#>   [NOT]
+#>     [LEAF] c IS NULL  (cols: c)
+
+# Extract all atomic predicates
+leaves <- sg_leaves(tree)
+vapply(leaves, `[[`, "", "expr")
+#> [1] "a > 3"      "b < 2"      "c IS NULL"
+```
+
+## Dialect translation: `sg_translate()`
+
+`sg_translate()` converts SQL from one dialect to another using SQLGlot's transpiler.
+
+```{r translate, eval = FALSE}
+# DuckDB-flavoured SQL → PostgreSQL
+pg_sql <- sg_translate(
+  "SELECT DATE_TRUNC('month', ts) AS month_start FROM events",
+  from = "duckdb",
+  to   = "postgres"
+)
+cat(pg_sql)
+```
+
+Supported `from`/`to` values include: `"duckdb"`, `"postgres"`, `"mysql"`,
+`"tsql"`, `"bigquery"`, `"snowflake"`, `"spark"`, `"sqlite"`.
+
+## DDL schema extraction: `sg_extract_ddl_schema()`
+
+Parse `CREATE TABLE` statements to get structured schema information.
+
+```{r ddl, eval = FALSE}
+ddl <- "
+  CREATE TABLE patients (
+    id   INTEGER PRIMARY KEY,
+    name TEXT    NOT NULL,
+    age  INTEGER
+  );
+  CREATE TABLE encounters (
+    enc_id     INTEGER PRIMARY KEY,
+    patient_id INTEGER REFERENCES patients(id),
+    ts         TIMESTAMP
+  );
+"
+
+schema <- sg_extract_ddl_schema(ddl)
+
+# Inspect the encounters table
+enc <- schema[[2]]
+enc$table_name
+#> [1] "encounters"
+enc$columns
+#>         name      type nullable is_pk
+#> 1     enc_id   INTEGER    FALSE  TRUE
+#> 2 patient_id   INTEGER     TRUE FALSE
+#> 3         ts TIMESTAMP     TRUE FALSE
+
+enc$foreign_keys[[1]]
+#> $columns
+#> [1] "patient_id"
+#>
+#> $ref_table
+#> [1] "patients"
+#>
+#> $ref_columns
+#> [1] "id"
+```
+
+## Python environment notes
+
+`sqlglotR` uses **reticulate** to call Python. If you have multiple Python
+environments, activate the correct one *before* loading `sqlglotR`:
+
+```{r env, eval = FALSE}
+reticulate::use_virtualenv("r-sqlglot")
+library(sqlglotR)
+```
+
+Or let `sqlglot_install()` create a dedicated environment:
+
+```{r install2, eval = FALSE}
+sqlglotR::sqlglot_install(envname = "r-sqlglot")
+```

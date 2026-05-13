@@ -1,0 +1,26 @@
+Package: sqlglotR
+Type: Package
+Title: R Interface to SQLGlot SQL Parser and Transpiler
+Version: 0.1.0
+Authors@R:
+    person("Package", "Maintainer", email = "maintainer@example.com",
+           role = c("aut", "cre"))
+Description: Wraps the Python SQLGlot library via reticulate to provide SQL
+    parsing, column-level lineage extraction, boolean expression decomposition,
+    and SQL dialect translation for R packages.
+Depends:
+    R (>= 4.1)
+Imports:
+    reticulate,
+    rlang,
+    cli
+Suggests:
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+SystemRequirements: Python (>= 3.8), sqlglot (>= 23.0)
+VignetteBuilder: knitr
