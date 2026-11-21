@@ -21,18 +21,18 @@ sqlglot_available <- function() {
 }
 
 # Package-level cache for the sqlglot Python module itself
-.sqlglot_mod <- NULL
+.sg_cache <- new.env(parent = emptyenv())
 
 # Lazy accessor — aborts with a helpful message if sqlglot is not installed.
 .sqlglot <- function() {
-  if (is.null(.sqlglot_mod)) {
+  if (is.null(.sg_cache$mod)) {
     if (!sqlglot_available()) {
       cli::cli_abort(c(
         "Python package {.pkg sqlglot} is not installed.",
         "i" = "Run {.run sqlglotR::sqlglot_install()} to install it."
       ))
     }
-    .sqlglot_mod <<- reticulate::import("sqlglot", delay_load = FALSE)
+    .sg_cache$mod <- reticulate::import("sqlglot", delay_load = FALSE)
   }
-  .sqlglot_mod
+  .sg_cache$mod
 }
